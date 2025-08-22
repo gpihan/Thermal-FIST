@@ -27,6 +27,7 @@ namespace thermalfist {
     double P;
   };
 
+
   typedef std::vector<ParticlizationHypersurfaceElement> ParticlizationHypersurface;
 
   namespace RandomGenerators {
@@ -43,8 +44,11 @@ namespace thermalfist {
       void FillProbabilities(const ParticlizationHypersurface* Hypersurface);
       void FillProbabilities(const std::vector<double>& Weights);
       void SetProbabilities(const std::vector<double>& CumulativeProbabilities) { m_CumulativeProbabilities = CumulativeProbabilities; }
+      // To serialize VolumeElementSampler Objects
+      const std::vector<double>& GetCumulativeProbabilities() const {return m_CumulativeProbabilities;}
       int SampleVolumeElement(MTRand& rangen = RandomGenerators::randgenMT) const;
     };
+
 
 
     /**
@@ -278,7 +282,7 @@ namespace thermalfist {
     void SetMomentumGenerators();
 
     /// Processes the volume elements to calculate the multinomial volume element sampling probabilities and the full-space yields
-    void ProcessVolumeElements();
+    void ProcessVolumeElements(std::string cacheFile="");
 
     /// Calculates the (T,muB,muS,muQ) values as function of baryon density at fixed constant energy density
     static std::vector<std::vector<double>> CalculateTMuMap(ThermalModelBase* model, double edens, double rhomin = 0.0, double rhomax = 0.27, double drho = 0.001);
@@ -288,7 +292,7 @@ namespace thermalfist {
 
     /// Sets the hypersurface parameters
     //void SetParameters(const ParticlizationHypersurface* hypersurface, ThermalModelBase* model, double etasmear = 0.0);
-    virtual void SetParameters();
+    virtual void SetParameters(std::string Surfile = "");
 
     /// The computed grand-canonical yields in 4pi
     const std::vector<double>& FullSpaceYields() const { return m_FullSpaceYields; }

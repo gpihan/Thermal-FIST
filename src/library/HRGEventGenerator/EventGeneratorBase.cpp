@@ -859,7 +859,7 @@ namespace thermalfist {
     return totals;
   }
 
-  void EventGeneratorBase::SetParameters()
+  void EventGeneratorBase::SetParameters(std::string Surfile)
   {
     SetMomentumGenerators();
     m_ParametersSet = true;

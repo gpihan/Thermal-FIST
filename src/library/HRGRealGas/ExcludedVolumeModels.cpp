@@ -1,5 +1,6 @@
 #include "HRGRealGas/ExcludedVolumeModels.h"
 #include <cstdio>
+#include <cstdlib>
 
 namespace thermalfist {
 

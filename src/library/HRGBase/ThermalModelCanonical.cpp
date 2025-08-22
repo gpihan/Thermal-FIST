@@ -46,12 +46,15 @@ namespace thermalfist {
 
   void ThermalModelCanonical::CalculateQuantumNumbersRange(bool computeFluctuations)
   {
+    // Set max quantum number for each charge to 0.
     m_BMAX = 0;
     m_QMAX = 0;
     m_SMAX = 0;
     m_CMAX = 0;
 
 
+    // Run through all particles
+    // Calculate quantum numbers
     for (int i = 0; i < m_TPS->ComponentsNumber(); ++i) {
       ThermalParticle &part = m_TPS->Particle(i);
 
@@ -70,6 +73,8 @@ namespace thermalfist {
         m_CMAX = max(m_CMAX, abs(part.Charm()));
       }
     }
+
+    // Set max quantum numbers
 
     m_BMAX_list = m_BMAX;
     m_QMAX_list = m_QMAX;
@@ -147,15 +152,47 @@ namespace thermalfist {
     ThermalModelBase::FixParametersNoReset();
   }
 
+  void ThermalModelCanonical::PrepareModelCE(){
+  
+    if (m_PartialZ.size() == 0)
+      CalculateQuantumNumbersRange();
+
+    if (m_BMAX_list == 1 && m_BCE && m_QCE && m_SCE && m_CCE && !UsePartialChemicalEquilibrium()) {
+      m_Banalyt = true;
+      m_Parameters.muB = 0.0;
+      m_Parameters.muQ = 0.0;
+      m_Parameters.muS = 0.0;
+      m_Parameters.muC = 0.0;
+    }
+    else {
+      m_Banalyt = false;
+      if (m_BCE)
+        m_Parameters.muB = 0.0;
+      if (m_QCE)
+        m_Parameters.muQ = 0.0;
+      if (m_SCE)
+        m_Parameters.muS = 0.0;
+      if (m_CCE)
+        m_Parameters.muC = 0.0;
+    }
+    if (!UsePartialChemicalEquilibrium()) 
+      FillChemicalPotentials();
+  }
+
 
   void ThermalModelCanonical::CalculatePrimordialDensities() {
     assert(m_IGFExtraConfig.MagneticField.B == 0.); // No magnetic field supported currently
 
     m_FluctuationsCalculated = false;
 
-    if (m_PartialZ.size() == 0)
-      CalculateQuantumNumbersRange();
 
+    // Calculate quantum numbers if they are not. 
+    if (m_PartialZ.size() == 0)
+      CalculateQuantumNumbersRange(); // <---------------------------------------
+    // set m_QNMap, m_QNVec, m_PartialZ (to 0.0), m_Corr (to 1.0)
+
+    // fix parameters related to canonical charge conservation <------------------------ 
+    // (UsePartialChemicalEquilibrium -> return m_PCE)
     if (m_BMAX_list == 1 && m_BCE && m_QCE && m_SCE && m_CCE && !UsePartialChemicalEquilibrium()) {
       m_Banalyt = true;
       m_Parameters.muB = 0.0;
@@ -177,12 +214,16 @@ namespace thermalfist {
       //PrepareModelGCE(); // Plan B, may work better when quantum numbers are large
     }
 
-    CalculatePartitionFunctions();
+    // Calculate the partition function
+    CalculatePartitionFunctions(); // <-----------------------------------
+    // fill m_Chem, m_PartialZ, m_Corr
 
+    // Fill in the densities for each particles
     for (size_t i = 0; i < m_densities.size(); ++i) {
       ThermalParticle &tpart = m_TPS->Particle(i);
       m_densities[i] = 0.;
 
+      // Canonical?
       if (!IsParticleCanonical(tpart)) {
         m_densities[i] = tpart.Density(m_Parameters, IdealGasFunctions::ParticleDensity, m_UseWidth, m_Chem[i]);
       }
@@ -195,6 +236,7 @@ namespace thermalfist {
           m_densities[i] = m_Corr[ind] * tpart.DensityCluster(1, m_Parameters, IdealGasFunctions::ParticleDensity, m_UseWidth, m_Chem[i]);
       }
       else {
+        // Canonical?
         for (int n = 1; n <= tpart.ClusterExpansionOrder(); ++n) {
           int ind = m_QNMap[QuantumNumbers(m_BCE*n*tpart.BaryonCharge(), m_QCE*n*tpart.ElectricCharge(), m_SCE*n*tpart.Strangeness(), m_CCE*n*tpart.Charm())];
           if (ind < static_cast<int>(m_Corr.size()))
@@ -203,6 +245,7 @@ namespace thermalfist {
       }
     }
 
+    
     m_Calculated = true;
     ValidateCalculation();
   }
@@ -293,7 +336,7 @@ Obtained: %lf\n\
   {
     if (Vc < 0.0)
       Vc = m_Parameters.SVc;
-
+    // Fill chemical potential if not using partial eq <------------------------ fill  m_Chem
     if (!UsePartialChemicalEquilibrium()) 
       FillChemicalPotentials();
     else {
@@ -309,6 +352,7 @@ Obtained: %lf\n\
       }
     }
 
+    // Check if all mu_i (paarticles) are zero or not.
     bool AllMuZero = true;
     for (int i = 0; i < m_TPS->ComponentsNumber(); ++i) {
       ThermalParticle &tpart = m_TPS->Particle(i);
@@ -319,12 +363,16 @@ Obtained: %lf\n\
       }
     }
 
+    // Define Nsx, Nsy from model partial partition function length
     vector<double> Nsx(m_PartialZ.size(), 0.);
     vector<double> Nsy(m_PartialZ.size(), 0.);
 
+    // Run on all particles
     for (int i = 0; i < m_TPS->ComponentsNumber(); ++i) {
       ThermalParticle &tpart = m_TPS->Particle(i);
 
+      // Calculate particle density using quantum numbers and fill Nsx and or Nsy
+      // Canonical
       if (!IsParticleCanonical(tpart)) {
         int ind = m_QNMap[QuantumNumbers(m_BCE * tpart.BaryonCharge(), m_QCE * tpart.ElectricCharge(), m_SCE * tpart.Strangeness(), m_CCE * tpart.Charm())];
         if (ind != m_QNMap[QuantumNumbers(0, 0, 0, 0)]) {
@@ -351,6 +399,7 @@ Obtained: %lf\n\
         }
       }
       else {
+        // Not canonical
         for (int n = 1; n <= tpart.ClusterExpansionOrder(); ++n) {
           int ind = m_QNMap[QuantumNumbers(m_BCE*n*tpart.BaryonCharge(), m_QCE*n*tpart.ElectricCharge(), m_SCE*n*tpart.Strangeness(), m_CCE*n*tpart.Charm())];
           if (ind < static_cast<int>(Nsx.size())) {
@@ -368,19 +417,24 @@ Obtained: %lf\n\
         }
       }
     }
+    /////////////////////// Done Nsx, Nsy
 
+    // Get numbers multiplying by a volume
+    // Set m_PartialZ to 0
     for (int i = 0; i < static_cast<int>(Nsx.size()); ++i) {
       Nsx[i] *= Vc;
       Nsy[i] *= Vc;
       m_PartialZ[i] = 0.;
     }
 
+    // Set nmax
     int nmax = max(3, (int)sqrt(m_Parameters.B*m_Parameters.B + m_Parameters.Q*m_Parameters.Q + m_Parameters.S*m_Parameters.S + m_Parameters.C*m_Parameters.C));
     if (m_Parameters.B == 0 && m_Parameters.Q == 0 && m_Parameters.S == 0 && m_Parameters.C == 0)
       nmax = 4;
 
 
     
+    // Set max B, Q, S, C based on total potential max.
     int nmaxB = max(4, m_Parameters.B);
     int nmaxQ = max(4, m_Parameters.Q);
     int nmaxS = max(4, m_Parameters.S);
@@ -391,9 +445,7 @@ Obtained: %lf\n\
     nmaxB = nmaxQ = nmaxS = nmaxC = nmax;
 
 
-
-
-
+    // Set m_MultExp, m_MultExpanalyt
     m_MultExp = 0.;
     m_MultExpBanalyt = 0.;
     for (size_t i = 0; i < m_PartialZ.size(); ++i) {
@@ -403,11 +455,13 @@ Obtained: %lf\n\
         m_MultExpBanalyt += Nsx[i];
     }
 
+    // Set maxB
     double dphiB = xMath::Pi() / nmaxB;
     int maxB = 2 * nmaxB;
     if (m_BMAX == 0 || m_Banalyt)
       maxB = 1;
 
+    /// PERFORM INTEGRALS
     for (int iB = 0; iB < maxB; ++iB) {
 
       vector<double> xlegB, wlegB;
@@ -563,7 +617,9 @@ Obtained: %lf\n\
         }
       }
     }
+    ///// INTEGRALS END
 
+    // Normalize m_PartialZ
     for (size_t iN = 0; iN < m_PartialZ.size(); ++iN) {
       if (m_BMAX != 0 && m_BMAX != 1 && !m_Banalyt) // TODO: cross-check
         m_PartialZ[iN] /= 2. * xMath::Pi();
@@ -578,6 +634,7 @@ Obtained: %lf\n\
     }
 
 
+    // Fill m_Corr
     m_Corr.resize(m_PartialZ.size());
     for (size_t iN = 0; iN < m_PartialZ.size(); ++iN) {
       m_Corr[iN] = m_PartialZ[iN] / m_PartialZ[m_QNMap[QuantumNumbers(0, 0, 0, 0)]];

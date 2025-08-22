@@ -1028,6 +1028,12 @@ namespace thermalfist {
     const std::vector<double>& Densities()      const { return m_densities; }
     std::vector<double>& Densities() { return m_densities; }
 
+    /// A setter for m_densities for efficiency -----------------------------------------
+    void SetMDensities(const std::vector<double>& dens){m_densities = dens;}
+
+    // For efficiency
+    virtual void PrepareModelCE();
+
     /// A vector with total particle number densities,
     /// which include the feeddown contribution in accordance
     /// with the stability flags.

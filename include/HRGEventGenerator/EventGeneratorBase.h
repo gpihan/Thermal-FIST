@@ -250,7 +250,7 @@ namespace thermalfist {
     const EventGeneratorConfiguration& GetConfiguration() const { return m_Config; }
 
     /// Sets the hypersurface parameters
-    virtual void CheckSetParameters() { if (!m_ParametersSet) SetParameters(); }
+    virtual void CheckSetParameters(std::string Surfile="") { if (!m_ParametersSet) SetParameters(Surfile); }
 
   protected:
     /**
@@ -334,7 +334,7 @@ namespace thermalfist {
 
     bool m_ParametersSet;
     /// Sets up the event generator ready for production
-    virtual void SetParameters();
+    virtual void SetParameters(std::string Surfile="");
 
     std::vector<std::vector<double>> ComputeEVRadii() const;
 

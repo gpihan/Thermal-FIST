@@ -256,6 +256,7 @@ namespace thermalfist {
   }
 
   void ThermalModelRealGas::CalculatePrimordialDensities() {
+    std::cout << "yolo Real Gas" << std::endl;
     m_FluctuationsCalculated = false;
 
     int NN = m_densities.size();

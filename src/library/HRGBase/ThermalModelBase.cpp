@@ -9,6 +9,7 @@
 
 #include <cstdio>
 #include <algorithm>
+#include <iostream>
 
 #include <Eigen/Dense>
 
@@ -605,6 +606,8 @@ namespace thermalfist {
     return (broydn.Iterations() < broydn.MaxIterations());
   }
 
+  void ThermalModelBase::PrepareModelCE(){}
+
   void ThermalModelBase::CalculateDensities()
   {
     CalculatePrimordialDensities();
@@ -813,10 +816,15 @@ namespace thermalfist {
 
 
   std::vector<double> ThermalModelBase::GetIdealGasDensities() const {
+    //std::cout << "IN GetIdealDensities" << std::endl;
     std::vector<double> ret = m_densities;
+
+    //std::cout << " ret : " << ret.size() << " m_densities : " << m_densities.size() << " m_TPS particles : " <<  m_TPS->Particles().size() << " m_Chem : " << m_Chem.size() << std::endl;   
+
     for (int i = 0; i < m_TPS->ComponentsNumber(); ++i) {
       ret[i] = m_TPS->Particles()[i].Density(m_Parameters, IdealGasFunctions::ParticleDensity, m_UseWidth, m_Chem[i]);
     }
+    //std::cout << "OUT GetIdealDensities" << std::endl;
     return ret;
   }
 

@@ -219,6 +219,8 @@ namespace thermalfist {
 
     virtual double ParticleScalarDensity(int /*part*/) { return 0.; }
 
+    virtual void PrepareModelCE();
+
     // Override functions end
 
   private:
@@ -231,6 +233,7 @@ namespace thermalfist {
      * 
      */
     void PrepareModelGCE();  /**< Creates the ThermalModelIdeal copy */
+
 
     void CleanModelGCE();    /**< Cleares the ThermalModelIdeal copy */
     //@}

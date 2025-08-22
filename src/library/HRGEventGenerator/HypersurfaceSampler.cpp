@@ -7,6 +7,8 @@
  */
 
 #include <iostream>
+#include <iomanip>
+#include <cstdint>
 
 #include "HRGEventGenerator/SimpleParticle.h"
 #include "HRGEventGenerator/ParticleDecaysMC.h"
@@ -18,6 +20,37 @@ using namespace std;
 
 namespace thermalfist {
 
+  bool LoadDens(const std::string& filename, std::vector<std::vector<double>>& data) {
+      std::ifstream in(filename, std::ios::binary);
+      if (!in) return false;
+
+      size_t outer_size;
+      in.read(reinterpret_cast<char*>(&outer_size), sizeof(outer_size));
+
+      data.clear();
+      data.reserve(outer_size);
+
+      for (size_t i = 0; i < outer_size; ++i) {
+        size_t inner_size;
+        in.read(reinterpret_cast<char*>(&inner_size), sizeof(inner_size));
+
+        std::vector<double> inner(inner_size);
+        in.read(reinterpret_cast<char*>(inner.data()), inner_size * sizeof(double));
+
+        data.emplace_back(std::move(inner));
+        }
+      in.close();
+      return true;
+  }
+
+  std::string ReplaceDatWithBin(const std::string& filename) {
+      if (filename.size() >= 4 && filename.substr(filename.size() - 4) == ".dat") {
+          std::string newname = filename;
+          newname.replace(filename.size() - 4, 4, ".bin");
+          return newname;
+      }
+      return filename;  // return unchanged if it doesn't end with .dat
+  }
 
   RandomGenerators::VolumeElementSampler::VolumeElementSampler(const ParticlizationHypersurface* Hypersurface)
   {
@@ -121,7 +154,7 @@ namespace thermalfist {
   }
 
   //void HypersurfaceEventGenerator::SetParameters(const ParticlizationHypersurface* hypersurface, ThermalModelBase* model, double etasmear)
-  void HypersurfaceEventGenerator::SetParameters()
+  void HypersurfaceEventGenerator::SetParameters(std::string Surfile)
   {
     if (m_RescaleTmu) {
       // Rescale T, mu's, and P for all cells
@@ -129,16 +162,23 @@ namespace thermalfist {
                                          m_THM,
                                          m_edens);
     }
-    ProcessVolumeElements();
+    ProcessVolumeElements(Surfile);
     SetMomentumGenerators();
     m_ParametersSet = true;
   }
 
-  void HypersurfaceEventGenerator::ProcessVolumeElements()
+  void HypersurfaceEventGenerator::ProcessVolumeElements(std::string cacheFile)
   {
+
+    std::string Surfbin = ReplaceDatWithBin(cacheFile);
+    std::vector< std::vector<double> > data; 
+    bool ExistingFile = LoadDens(Surfbin, data);
+
+    if(ExistingFile){std::cout << "Using existing file at : " << Surfbin << std::endl;}
+    
+
     // Densities for the volume element sampling
     vector<vector<double>> allweights(m_THM->TPS()->ComponentsNumber(), vector<double>(m_ParticlizationHypersurface->size(), 0.));
-
     m_FullSpaceYields = vector<double>(m_THM->TPS()->ComponentsNumber(), 0.);
     m_Tav = 0.;
     m_Musav = vector<double>(m_THM->TPS()->ComponentsNumber(), 0.);
@@ -154,19 +194,44 @@ namespace thermalfist {
     // This is to catch the case when the energy density is not uniform or mismatched in the input parameters
     double rescaleTmu_EMatch = 0., rescaleTmu_Etot = 0.;
 
+    //std::cout << "IN LOOP" << std::endl;
     // Process all the hypersurface elements
+
+    //std::ofstream outTXT1("CheckREAD.txt");
+    //if (!outTXT1) {
+    //    std::cerr << "Error: could not open file for writing\n";
+    //}
+    //outTXT1 << "# cell_i value\n";
+
+    //std::ofstream outTXT2("CheckCALC.txt");
+    //if (!outTXT2) {
+    //    std::cerr << "Error: could not open file for writing\n";
+    //}
+    //outTXT2 << "# cell_i value \n";
+
+    // Write file on the go
+    std::ofstream out(Surfbin, std::ios::binary | std::ios::app);
+    if(!ExistingFile){
+        if (!out) {std::cerr << "Could not open file for writing\n";}
+        const size_t outer_size = m_ParticlizationHypersurface->size();
+        out.write(reinterpret_cast<const char*>(&outer_size), sizeof(outer_size));
+    }
+
     for (size_t ielem = 0; ielem < m_ParticlizationHypersurface->size(); ++ielem) {
       if (ielem % 10000 == 0) {
         cout << ielem << " ";
         cout.flush();
       }
+      // Get the current surface element - O(1)
       const auto& elem = m_ParticlizationHypersurface->operator[](ielem);
 
+      // Set tempreatures and muB from the surface element. - O(1)
       m_THM->SetTemperature(elem.T);
       m_THM->SetBaryonChemicalPotential(elem.muB);
       m_THM->SetElectricChemicalPotential(elem.muQ);
       m_THM->SetStrangenessChemicalPotential(elem.muS);
 
+      // Set gammas, B, C, S if needed - O(1)
       if (m_Config.CFOParameters.gammaq != 1.0)
         m_THM->SetGammaq(m_Config.CFOParameters.gammaq);
 
@@ -176,25 +241,45 @@ namespace thermalfist {
       if (m_Config.CFOParameters.gammaC != 1.0)
         m_THM->SetGammaC(m_Config.CFOParameters.gammaC);
 
+      // Compute surface element volume O(1)
       double dVeff = 0.;
       for (int mu = 0; mu < 4; ++mu)
         dVeff += elem.dsigma[mu] * elem.u[mu];
 
       if (dVeff <= 0.) {
+        // For file wirting and access consistency - write a dummy vector when skipping the surface element. 
+        size_t inner_size = 0;
+        out.write(reinterpret_cast<const char*>(&inner_size), sizeof(inner_size));
         continue;
       }
 
+      // Fill Match or Tot accroding to criterion - O(1)
       if (abs(elem.edens - m_edens) <= 1.e-3)
         rescaleTmu_EMatch += dVeff * elem.edens;
-//      else
-//        cout << "Energy density mismatch: " << elem.edens << " vs " << m_edens << endl;
+
       rescaleTmu_Etot += dVeff * elem.edens;
 
+      // Accumulate volume and weighted average temperature O(1)
       Veff += dVeff;
       m_Tav += elem.T * dVeff;
 
-      m_THM->CalculatePrimordialDensities();
+      // --------------------------------------------------------------
+      if(ExistingFile){
+          std::vector<double> current_densities = data[ielem];
+          m_THM->SetMDensities(current_densities);
+      }
+      else{
 
+          m_THM->CalculatePrimordialDensities(); 
+          std::vector<double> current_densities = m_THM->Densities();
+          // writting the file in binary
+          size_t inner_size = current_densities.size();
+          out.write(reinterpret_cast<const char*>(&inner_size), sizeof(inner_size));
+          out.write(reinterpret_cast<const char*>(current_densities.data()), inner_size * sizeof(double));
+          
+      }
+
+      // Get Ideal densities - Also save the ideal densities as complexity is unknown
       std::vector<double>* densitiesIdeal = &m_THM->Densities();
       std::vector<double> tdens;
       if (m_THM->TAG() != "ThermalModelIdeal") {
@@ -202,6 +287,7 @@ namespace thermalfist {
         densitiesIdeal = &tdens;
       }
 
+      // Get the N, mus, densities and ideal densities for all particles in this surface element. 
       for (size_t ipart = 0; ipart < m_THM->TPS()->ComponentsNumber(); ++ipart) {
         allweights[ipart][ielem] = m_THM->Densities()[ipart] * dVeff;
 
@@ -212,7 +298,13 @@ namespace thermalfist {
         //Npart += m_THM->TPS()->Particle(ipart).BaryonCharge() * m_THM->Densities()[ipart] * dVeff;
       }
     }
+    // Close the written file
+    if(ExistingFile){
+        out.close();
+    }
+    // OUT OF CELLS LOOP
 
+    // Fill the random generators vector from weitghts dN * dVeff
     // Free memory just in case
     std::vector<RandomGenerators::VolumeElementSampler>().swap(m_VolumeElementSamplers);
     m_VolumeElementSamplers.clear();
@@ -222,8 +314,10 @@ namespace thermalfist {
       vector<double>().swap(allweights[ipart]);
     }
 
+    // Define m_FullSpaceYields as FullDensitites 
     m_FullSpaceYields = FullDensities;
 
+    // Scale the obtained volume, average mus, densities and ideal densities (which were particles numbers until here).
     m_Tav /= Veff;
     for (size_t ipart = 0; ipart < m_THM->TPS()->ComponentsNumber(); ++ipart) {
       m_Musav[ipart] /= Veff;
@@ -231,6 +325,7 @@ namespace thermalfist {
       FullDensitiesIdeal[ipart] /= Veff;
     }
 
+    // Print obtained results (muB is actually muB mu proton).
     cout << endl;
     cout << "V     = " << Veff << endl;
     cout << "<T>   = " << m_Tav << endl;
@@ -296,12 +391,17 @@ namespace thermalfist {
     cout.flush();
 
 
+    // Set the new volume and other quantities. Prepare for Multinomials if asked
     m_THM->SetVolume(Veff);
     m_THM->SetCanonicalVolume(Veff);
     m_THM->Densities() = FullDensities;
     m_DensitiesIdeal = FullDensitiesIdeal;
     if (m_Config.fEnsemble != EventGeneratorConfiguration::GCE)
       PrepareMultinomials();
+
+    // save the densities of the particles for future use.
+    //SaveDens(Surfbin, data);
+
   }
 
   std::vector<std::vector<double>> HypersurfaceEventGenerator::CalculateTMuMap(ThermalModelBase* model, double edens, double rhomin, double rhomax, double drho)
